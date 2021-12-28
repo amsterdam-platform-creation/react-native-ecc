@@ -3,6 +3,7 @@ package com.rn.ecc;
 import android.content.SharedPreferences;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
+import android.security.keystore.KeyInfo;
 import android.util.Base64;
 
 import java.io.IOException;
@@ -12,6 +13,7 @@ import java.security.InvalidKeyException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
+import java.security.KeyFactory;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
@@ -40,7 +42,7 @@ public class KeyManager {
      *
      * The private key is stored in the KeyStore,
      */
-    public String generateKeys() throws
+    public String generateKeys(boolean restricted) throws
         InvalidAlgorithmParameterException,
         InvalidKeyException,
         NoSuchAlgorithmException,
@@ -48,7 +50,7 @@ public class KeyManager {
 
         String keystoreAlias = UUID.randomUUID().toString();
 
-        KeyPairGenerator keyPairGenerator = getKeyPairGenerator(keystoreAlias);
+        KeyPairGenerator keyPairGenerator = getKeyPairGenerator(keystoreAlias, restricted);
         KeyPair keyPair = keyPairGenerator.genKeyPair();
 
         ECPublicKey ecPublicKey = (ECPublicKey)keyPair.getPublic();
@@ -97,6 +99,53 @@ public class KeyManager {
         return signature;
     }
 
+    public boolean isKeyRestricted(String publicKey) throws
+        CertificateException,
+        NoSuchAlgorithmException,
+        IOException,
+        UnrecoverableKeyException,
+        KeyStoreException,
+        InvalidKeyException,
+        InvalidKeySpecException,
+        NoSuchProviderException {
+        KeyStore keyStore = KeyStore.getInstance(ANDROID_KEYSTORE);
+        keyStore.load(null);
+
+        String keyAlias = sharedPreferences.getString(publicKey, null);
+        PrivateKey privateKey = (PrivateKey) keyStore.getKey(keyAlias, null);
+
+        KeyFactory factory = KeyFactory.getInstance(privateKey.getAlgorithm(), ANDROID_KEYSTORE);
+        KeyInfo keyInfo = factory.getKeySpec(privateKey, KeyInfo.class);
+
+        return keyInfo.isUserAuthenticationRequired();
+    }
+
+    public boolean isKeyHardwareBacked(String publicKey) throws
+        CertificateException,
+        NoSuchAlgorithmException,
+        IOException,
+        UnrecoverableKeyException,
+        KeyStoreException,
+        InvalidKeyException,
+        InvalidKeySpecException,
+        NoSuchProviderException {
+        KeyStore keyStore = KeyStore.getInstance(ANDROID_KEYSTORE);
+        keyStore.load(null);
+
+        String keyAlias = sharedPreferences.getString(publicKey, null);
+        PrivateKey privateKey = (PrivateKey) keyStore.getKey(keyAlias, null);
+
+        KeyFactory factory = KeyFactory.getInstance(privateKey.getAlgorithm(), ANDROID_KEYSTORE);
+        KeyInfo keyInfo = factory.getKeySpec(privateKey, KeyInfo.class);
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            int secLevel = keyInfo.getSecurityLevel();
+            return secLevel == KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT || secLevel == KeyProperties.SECURITY_LEVEL_STRONGBOX;
+        } else {
+            return keyInfo.isInsideSecureHardware();
+        }
+    }
+
     public Signature getVerifyingSignature(String publicKey) throws
         NoSuchAlgorithmException,
         InvalidAlgorithmParameterException,
@@ -126,19 +175,25 @@ public class KeyManager {
         return signature.verify(expectedBytes);
     }
 
-    private KeyPairGenerator getKeyPairGenerator(String keystoreAlias) throws
+    private KeyPairGenerator getKeyPairGenerator(String keystoreAlias, boolean restricted) throws
         NoSuchAlgorithmException,
         InvalidAlgorithmParameterException,
         NoSuchProviderException
     {
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, ANDROID_KEYSTORE);
-        KeyGenParameterSpec keyGenParameterSpec = new KeyGenParameterSpec.Builder(keystoreAlias, KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY)
-            .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA512, KeyProperties.DIGEST_NONE)
-            .setUserAuthenticationRequired(true)
-            .setInvalidatedByBiometricEnrollment(false)
-            .setKeySize(KEY_SIZE)
-            .build();
-        keyPairGenerator.initialize(keyGenParameterSpec);
+        KeyGenParameterSpec.Builder builder = new KeyGenParameterSpec.Builder(keystoreAlias, KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY);
+
+        if (restricted) {
+            builder.setUserAuthenticationRequired(true); // Biometrics protection
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                builder.setUserAuthenticationParameters(0,  KeyProperties.AUTH_BIOMETRIC_STRONG); // | KeyProperties.AUTH_DEVICE_CREDENTIAL // Uncomment if fallback to passcode is allowed
+            }
+        }
+        builder.setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA512, KeyProperties.DIGEST_NONE);
+        builder.setInvalidatedByBiometricEnrollment(false);
+        builder.setKeySize(KEY_SIZE);
+
+        keyPairGenerator.initialize(builder.build());
         return keyPairGenerator;
     }
 }

@@ -19,4 +19,5 @@
 - (NSData *)sign:(nonnull NSDictionary*)options errMsg:(NSString **) errMsg;
 - (NSData *)cancelSigning:(nonnull NSDictionary*)options errMsg:(NSString **) errMsg;
 - (BOOL) verify:(NSString *)base64pub hash:(NSData *)hash sig:(NSData *)sig errMsg:(NSString **)errMsg;
+- (BOOL) isKeyHardwareBacked:(NSString *)base64pub errMsg:(NSString **)errMsg;
 @end

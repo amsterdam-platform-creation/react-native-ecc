@@ -71,9 +71,10 @@ RCT_EXPORT_METHOD(generateECPair:(nonnull NSDictionary*) options
   CFErrorRef sacErr = NULL;
   SecAccessControlRef sacObject;
 
+  BOOL restricted = [[options valueForKey:@"restricted"] boolValue];
   sacObject = SecAccessControlCreateWithFlags(kCFAllocatorDefault,
                                               kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-                                              kSecAccessControlBiometryAny,
+                                              (restricted) ? kSecAccessControlBiometryAny : kNilOptions,
                                               &sacErr);
 
   if (sacErr) {
@@ -276,6 +277,12 @@ RCT_EXPORT_METHOD(verify:(nonnull NSDictionary *)options
   NSString* hash = [options valueForKey:@"hash"];
   NSString* sig = [options valueForKey:@"sig"];
   [self doVerify:pub hash:hash sig:sig callback:callback];
+}
+
+RCT_EXPORT_METHOD(isKeyHardwareBacked:(nonnull NSDictionary *)options
+                  callback:(RCTResponseSenderBlock)callback) {
+  // NSString* pub = [options valueForKey:@"pub"];
+  callback(@[[NSNull null], @YES]);
 }
 
 -(OSStatus) importPubKey:(NSString *)base64pub {

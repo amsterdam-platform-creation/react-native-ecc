@@ -10,7 +10,7 @@ const { RNECC } = NativeModules
 
 const algorithm = 'sha256'
 const encoding = 'base64'
-const curve = 'secp256r1'
+const curve = 'p256'
 const bits = 256
 
 let serviceID
@@ -30,44 +30,76 @@ function setServiceID(id) {
  * @return {Promise} It will reject with an error if the generation fails, it
  * will resolve with the public key in base64 if it succeeds.
  */
-function generateKeys() {
+function generateKeys(restricted = false) {
   checkServiceID()
 
   return promisify(RNECC.generateECPair, {
     service: serviceID,
-    accessGroup: accessGroup,
+    accessGroup,
+    restricted,
     curve,
     bits,
-  })
+  }).then(base64ToHex)
 }
 
 /**
  * Sign some data with a given public key.
- *
  * The user will be prompted with biometric authentication to sign data.
  *
- * @param {string} publicKey Public key to use to sign given data. The key must
+ * @param {string} publicKey Public key (hex) to use to sign given data. The key must
  * have been generated with the `generateKeys` method.
  * @param {string} data Data to sign.
- * @param {string} promptTitle Title of the biometric prompt.
- * @param {string} promptMessage Message of the biometric prompt.
- * @param {string} promptCancel Label of cancel button of the biometric prompt.
+ * @param {string} ops.promptTitle Title of the biometric prompt.
+ * @param {string} ops.promptMessage Message of the biometric prompt.
+ * @param {string} ops.promptCancel Label of cancel button of the biometric prompt.
  * @return {Promise} Will reject with an error if the signing fails, will
  * resolve with signed data if it succeeds.
  */
-function sign({ publicKey, data, promptTitle, promptMessage, promptCancel }) {
+function sign(publicKey, data, ops = {}) {
   checkServiceID()
   assert(typeof publicKey === 'string')
   assert(typeof data === 'string')
 
   return promisify(RNECC.sign, {
     service: serviceID,
-    accessGroup: accessGroup,
-    pub: publicKey,
+    accessGroup,
+    pub: hexToBase64(publicKey),
     hash: getHash(data),
-    promptTitle,
-    promptMessage,
-    promptCancel,
+    promptTitle: ops.promptTitle || '',
+    promptMessage: ops.promptMessage || '',
+    promptCancel: ops.promptCancel || '',
+  }).then(base64ToHex)
+}
+
+/**
+ * verifies a signature
+ * @param {string} publicKey - pubKey corresponding to private key to sign hash with
+ * @param {string} data - signed data
+ * @param {suffer} sig - signature
+ */
+function verify(publicKey, data, sig) {
+  checkServiceID()
+  assert(typeof publicKey === 'string')
+  assert(typeof data === 'string')
+  assert(typeof sig === 'string')
+
+  return promisify(RNECC.verify, {
+    pub: hexToBase64(publicKey),
+    sig: hexToBase64(sig),
+    hash: getHash(data)
+  })
+}
+
+/**
+ * checks if key was created in secure execution environment (SecureEnclave/TEE)
+ * @param {string} publicKey - pubKey corresponding to private key to sign hash with
+ */
+ function isKeyHardwareBacked(publicKey) {
+  checkServiceID()
+  assert(typeof publicKey === 'string')
+
+  return promisify(RNECC.isKeyHardwareBacked, {
+    pub: hexToBase64(publicKey),
   })
 }
 
@@ -138,12 +170,22 @@ function getHash (data) {
   return new Buffer(arr).toString(encoding)
 }
 
+function base64ToHex(base64Str) {
+  return Buffer.from(base64Str, 'base64').toString('hex')
+}
+
+function hexToBase64(hexStr) {
+  return Buffer.from(hexStr, 'hex').toString('base64')
+}
+
 export default {
   setServiceID,
   generateKeys,
   sign,
   cancelSigning,
+  isKeyHardwareBacked,
   computeCoordinates,
   ECCError,
   ErrorCode,
+  verify,
 };
