@@ -1,6 +1,7 @@
 export const ErrorCode = Object.freeze({
   Canceled: 'canceled',
   BiometryNotAvailable: 'biometry-not-available',
+  BiometryNotEnrolled: 'biometry-not-enrolled',
   LockoutTemporarily: 'lockout-temporarily',
   LockoutPermanent: 'lockout-permanent',
   NonCompliantPrompt: 'non-compliant-prompt',
@@ -28,6 +29,7 @@ export const AndroidErrorCode = Object.freeze({
   1000: ErrorCode.Generic,              // ERROR_INVALID_PROMPT_PARAMETERS (custom error)
   1001: ErrorCode.BiometryNotAvailable, // ERROR_INVALID_SIGNATURE (custom error)
   1002: ErrorCode.NonCompliantPrompt,   // ERROR_NON_COMPLIANT_PROMPT (custom error)
+  1003: ErrorCode.BiometryNotEnrolled,  // ERROR_BIOMETRY_NOT_ENROLLED (custom error) 'java.security.InvalidAlgorithmParameterException: java.lang.IllegalStateException: At least one biometric must be enrolled to create keys requiring user authentication for every use'
 });
 
 /**

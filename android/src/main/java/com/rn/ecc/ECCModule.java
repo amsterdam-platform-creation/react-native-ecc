@@ -34,6 +34,7 @@ public class ECCModule extends ReactContextBaseJavaModule {
     // Triggered by some OnePlus devices (that implement the biometric prompt
     // wrong) on soft failures (e.g., wrong fingerprint).
     public static final int ERROR_NON_COMPLIANT_PROMPT = 1002;
+    public static final int ERROR_BIOMETRY_NOT_ENROLLED = 1003;
 
     public ECCModule(ReactApplicationContext reactContext) {
         super(reactContext);
@@ -55,10 +56,15 @@ public class ECCModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void generateECPair(ReadableMap map, Callback function) {
         try {
-            String publicKey = keyManager.generateKeys();
+            boolean restricted = map.getBoolean("restricted");
+            String publicKey = keyManager.generateKeys(restricted);
             function.invoke(null, publicKey);
         } catch (Exception ex) {
-            function.invoke(ex.toString(), null);
+            if (ex.toString().startsWith("java.security.InvalidAlgorithmParameterException: java.lang.IllegalStateException: At least one ")) {
+                function.invoke(ERROR_BIOMETRY_NOT_ENROLLED, null);
+            } else {
+                function.invoke(ex.toString(), null);
+            }
         }
     }
 
@@ -70,40 +76,57 @@ public class ECCModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void sign(final ReadableMap map, final Callback function) {
-        final String data = map.getString("hash");
-        final String publicKey = map.getString("pub");
-        final String message = map.getString("promptMessage");
-        final String title = map.getString("promptTitle");
-        final String cancel = map.getString("promptCancel");
+        try {
+            final String data = map.getString("hash");
+            final String publicKey = map.getString("pub");
+            final String message = map.getString("promptMessage");
+            final String title = map.getString("promptTitle");
+            final String cancel = map.getString("promptCancel");
 
-        UiThreadUtil.runOnUiThread(
-            new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        biometricPrompt = new BiometricPrompt(
-                            (FragmentActivity) getCurrentActivity(),
-                            Executors.newSingleThreadExecutor(),
-                            new ECCAuthenticationCallback(keyManager, data, function)
-                        );
+            boolean restricted = keyManager.isKeyRestricted(publicKey);
 
-                        PromptInfo promptInfo = new PromptInfo.Builder()
-                            .setTitle(title)
-                            .setDescription(message)
-                            .setNegativeButtonText(cancel)
-                            .build();
+            if (!restricted) {
+                Signature signature = keyManager.getSigningSignature(publicKey);
+                function.invoke(null, keyManager.sign(data, signature));
+                return;
+            }
 
-                        Signature signature = keyManager.getSigningSignature(publicKey);
-                        BiometricPrompt.CryptoObject cryptoObject = new BiometricPrompt.CryptoObject(signature);
+            UiThreadUtil.runOnUiThread(
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            biometricPrompt = new BiometricPrompt(
+                                (FragmentActivity) getCurrentActivity(),
+                                Executors.newSingleThreadExecutor(),
+                                new ECCAuthenticationCallback(keyManager, data, function)
+                            );
 
-                        biometricPrompt.authenticate(promptInfo, cryptoObject);
-                    } catch (IllegalArgumentException ex) {
-                        function.invoke(ERROR_INVALID_PROMPT_PARAMETERS, null);
-                    } catch (Exception ex) {
-                        function.invoke(ERROR_INVALID_SIGNATURE, null);
+                            PromptInfo.Builder builder = new PromptInfo.Builder()
+                                .setTitle(title)
+                                .setDescription(message);
+                            // Uncomment if fallback to passcode is allowed
+                            // if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                            //     builder.setDeviceCredentialAllowed(true);
+                            // } else {
+                                builder.setNegativeButtonText(cancel);
+                            // }
+
+                            Signature signature = keyManager.getSigningSignature(publicKey);
+                            BiometricPrompt.CryptoObject cryptoObject = new BiometricPrompt.CryptoObject(signature);
+
+                            biometricPrompt.authenticate(builder.build(), cryptoObject);
+                        } catch (IllegalArgumentException ex) {
+                            function.invoke(ERROR_INVALID_PROMPT_PARAMETERS, null);
+                        } catch (Exception ex) {
+                            function.invoke(ERROR_INVALID_SIGNATURE, null);
+                        }
                     }
-                }
-            });
+                });
+        } catch (Exception ex) {
+            function.invoke(ex.toString(), null);
+        }
+
     }
 
     @ReactMethod
@@ -123,6 +146,17 @@ public class ECCModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void cancelSigning(ReadableMap map, Callback function) {
         cancelAuthentication();
+    }
+
+    @ReactMethod
+    public void isKeyHardwareBacked(ReadableMap map, Callback function) {
+        try {
+            String publicKey = map.getString("pub");
+            boolean result = keyManager.isKeyHardwareBacked(publicKey);
+            function.invoke(null, result);
+        } catch (Exception ex) {
+            function.invoke(ex.toString(), null);
+        }
     }
 
     private void cancelAuthentication() {
@@ -177,7 +211,7 @@ public class ECCModule extends ReactContextBaseJavaModule {
             if(didResolve) {
               return;
             }
-            
+
             try {
                 BiometricPrompt.CryptoObject cryptoObject = authenticationResult.getCryptoObject();
                 Signature signature = cryptoObject.getSignature();
