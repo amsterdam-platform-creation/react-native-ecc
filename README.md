@@ -1,4 +1,15 @@
-# react-native-ecc
+# Library we (APC) use for Device Binding
+
+This is a private fork of https://github.com/welldsagl/react-native-ecc/tree/master, which is a fork of https://github.com/tradle/react-native-ecc.
+
+## What was changed:
+
+- optional generation of key pairs restricted with biometrics
+- `isKeyHardwareBacked` - method to ensure that key-pair was generated in secure execution environment
+
+---
+
+# Original README: react-native-ecc
 
 basic elliptic curve crypto for React Native
 
@@ -11,40 +22,46 @@ See [Linking Libraries](http://facebook.github.io/react-native/docs/linking-libr
 ## Usage
 
 ```js
-import * as ec from 'react-native-ecc'
-import { Buffer } from 'buffer'
+import * as ec from "react-native-ecc";
+import { Buffer } from "buffer";
 
 // if you want to be able to find your keys
-// next time, make sure to use the same service ID 
-ec.setServiceID('be.excellent.to.each.other')
+// next time, make sure to use the same service ID
+ec.setServiceID("be.excellent.to.each.other");
 // optional
 // ec.setAccessGroup('dsadjsakd.com.app.awesome.my')
 
 // this library allows you to sign 32 byte hashes (e.g. sha256 hashes)
-const msg = new Buffer('hey ho')
+const msg = new Buffer("hey ho");
 // check ec.curves for supported curves
-const curve = 'p256'
+const curve = "p256";
 ec.keyPair(curve, function (err, key) {
   // pub tested for compatibility with npm library "elliptic"
-  const pub = key.pub
-  console.log('pub', key.pub.toString('hex'))
+  const pub = key.pub;
+  console.log("pub", key.pub.toString("hex"));
 
   // look up the key later like this:
   // const key = ec.keyFromPublic(pub)
 
-  key.sign({
-    data: msg,
-    algorithm: 'sha256'
-  }, function (err, sig) {
-    // signatures tested for compatibility with npm library "elliptic"
-    console.log('sig', sig.toString('hex'))
-    key.verify({
-      algorithm: 'sha256',
+  key.sign(
+    {
       data: msg,
-      sig: sig
-    }, function (err, verified) {
-      console.log('verified:', verified)
-    })
-  })
-})
+      algorithm: "sha256",
+    },
+    function (err, sig) {
+      // signatures tested for compatibility with npm library "elliptic"
+      console.log("sig", sig.toString("hex"));
+      key.verify(
+        {
+          algorithm: "sha256",
+          data: msg,
+          sig: sig,
+        },
+        function (err, verified) {
+          console.log("verified:", verified);
+        }
+      );
+    }
+  );
+});
 ```
